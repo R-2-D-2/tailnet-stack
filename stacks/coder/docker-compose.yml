@@ -37,6 +37,7 @@ volumes:
   postgres_data:
   coder_data:
   dind_data:
+  dind_socket:    # Shared volume exposing the DinD daemon socket to Coder
 
 services:
 
@@ -72,8 +73,7 @@ services:
     image: docker:27-dind
     restart: unless-stopped
     privileged: true                   # Required for DinD
-    networks:
-      - coder
+    network_mode: host                 # Host network: workspace containers can reach Tailscale/Coder
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -83,9 +83,10 @@ services:
       DOCKER_TLS_CERTDIR: ""           # Disable TLS — internal network only
     volumes:
       - dind_data:/var/lib/docker
-    command: ["dockerd", "--host=tcp://0.0.0.0:12375", "--host=unix:///var/run/docker.sock", "--tls=false", "--ipv6=false"]
+      - dind_socket:/run/dind          # Expose socket to Coder via shared volume (no TCP needed)
+    command: ["dockerd", "--host=unix:///run/dind/docker.sock", "--tls=false", "--ipv6=false"]
     healthcheck:
-      test: ["CMD", "docker", "info"]
+      test: ["CMD", "docker", "-H", "unix:///run/dind/docker.sock", "info"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -123,8 +124,8 @@ services:
       #   tsdproxy does not support wildcard subdomains. VS Code Web uses
       #   Coder's built-in path-based proxy (subdomain=false in the template).
 
-      # --- Docker provisioner (DinD on coder bridge; port 12375 avoids conflict with host dockerd on 2375) ---
-      DOCKER_HOST: "tcp://dind:12375"
+      # --- Docker provisioner — access DinD via shared Unix socket (avoids all TCP bridge/iptables issues) ---
+      DOCKER_HOST: "unix:///run/dind/docker.sock"
 
       # --- Logging ---
       CODER_LOG_LEVEL: "${CODER_LOG_LEVEL:-info}"
@@ -139,6 +140,7 @@ services:
       TF_VAR_tailscale_ip: "${TAILSCALE_IP}"
     volumes:
       - coder_data:/home/coder/.config
+      - dind_socket:/run/dind          # Access DinD socket shared from the dind container
     labels:
       # -------------------------------------------------------------------------
       # tsdproxy — registers this container in the Tailnet as:
