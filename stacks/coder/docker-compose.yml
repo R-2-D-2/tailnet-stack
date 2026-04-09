@@ -84,7 +84,10 @@ services:
     volumes:
       - dind_data:/var/lib/docker
       - dind_socket:/run/dind          # Expose socket to Coder via shared volume (no TCP needed)
-    command: ["dockerd", "--host=unix:///run/dind/docker.sock", "--tls=false", "--ipv6=false"]
+    # --group=root sets the socket group to GID 0 (root), matching the
+    # group_add: ["0"] on the coder service so it can connect without root.
+    # Default group is "docker" (non-zero GID in Alpine), which would not match.
+    command: ["dockerd", "--host=unix:///run/dind/docker.sock", "--group=root", "--tls=false", "--ipv6=false"]
     healthcheck:
       test: ["CMD", "docker", "-H", "unix:///run/dind/docker.sock", "info"]
       interval: 10s
