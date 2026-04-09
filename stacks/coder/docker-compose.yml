@@ -92,10 +92,10 @@ services:
       - -c
       - |
         dockerd --host=unix:///run/dind/docker.sock --tls=false --ipv6=false &
-        DPID=$!
+        DPID=$$!
         until [ -S /run/dind/docker.sock ]; do sleep 0.1; done
         chmod 0666 /run/dind/docker.sock
-        wait "$DPID"
+        wait "$$DPID"
     healthcheck:
       test: ["CMD", "docker", "-H", "unix:///run/dind/docker.sock", "info"]
       interval: 10s
