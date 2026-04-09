@@ -11,6 +11,15 @@
 # Each workspace container runs its own inner Docker daemon for devcontainer
 # support (privileged, nested DinD).
 #
+# Tailnet exposure:
+#   tsdproxy (running on the host) picks up the coder service via Docker labels
+#   and registers it as https://coder.tailaa3fee.ts.net in the Tailnet.
+#   tsdproxy handles TLS via Tailscale auto-cert — Coder itself runs plain HTTP.
+#
+# Note: tsdproxy does not support wildcard subdomains, so
+#   CODER_WILDCARD_ACCESS_URL is intentionally not set. VS Code Web is served
+#   via Coder's path-based proxy instead of subdomain-based proxy.
+#
 # Requires: .env (see .env.example)
 # =============================================================================
 
@@ -89,21 +98,15 @@ services:
       CODER_PG_CONNECTION_URL: "postgresql://${POSTGRES_USER:-coder}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-coder}?sslmode=disable"
 
       # --- Access ---
-      # Set to the Tailscale MagicDNS hostname or Tailnet IP of this VPS
-      CODER_ACCESS_URL: "${CODER_ACCESS_URL}"
-      CODER_WILDCARD_ACCESS_URL: "${CODER_WILDCARD_ACCESS_URL:-}"
+      # tsdproxy exposes Coder at https://coder.tailaa3fee.ts.net
+      # TLS is terminated by tsdproxy; Coder receives plain HTTP on :7080.
+      CODER_ACCESS_URL: "${CODER_ACCESS_URL:-https://coder.tailaa3fee.ts.net}"
+      # CODER_WILDCARD_ACCESS_URL is intentionally unset:
+      #   tsdproxy does not support wildcard subdomains. VS Code Web uses
+      #   Coder's built-in path-based proxy (subdomain=false in the template).
 
       # --- Docker provisioner (points at the DinD sidecar) ---
       DOCKER_HOST: "tcp://dind:2375"
-
-      # --- VS Code Web ---
-      # Coder serves VS Code Web natively; no extra config needed.
-      # Workspaces declare the vscode_web app in their template (see templates/).
-
-      # --- TLS (optional, recommended behind Tailscale) ---
-      # CODER_TLS_ENABLE: "true"
-      # CODER_TLS_CERT_FILE: "/tls/cert.pem"
-      # CODER_TLS_KEY_FILE: "/tls/key.pem"
 
       # --- Logging ---
       CODER_LOG_LEVEL: "${CODER_LOG_LEVEL:-info}"
@@ -112,6 +115,20 @@ services:
       CODER_TELEMETRY_ENABLE: "${CODER_TELEMETRY_ENABLE:-false}"
     volumes:
       - coder_data:/home/coder/.config
+    labels:
+      # -------------------------------------------------------------------------
+      # tsdproxy — registers this container in the Tailnet as:
+      #   https://coder.tailaa3fee.ts.net
+      #
+      # tsdproxy (running on the host) discovers this container via the host
+      # Docker socket. It proxies HTTPS → HTTP :7080 and provisions a Tailscale
+      # auto-cert for the machine name "coder".
+      # -------------------------------------------------------------------------
+      tsdproxy.enable: "true"
+      tsdproxy.name: "coder"
+      tsdproxy.container_port: "7080"
+      tsdproxy.scheme: "http"           # Coder serves plain HTTP; tsdproxy adds TLS
+      tsdproxy.tlsvalidate: "false"     # No TLS on the container side
     depends_on:
       postgres:
         condition: service_healthy

@@ -88,6 +88,11 @@ data "coder_parameter" "memory_gb" {
 # ---------------------------------------------------------------------------
 # VS Code Web app
 # ---------------------------------------------------------------------------
+# tsdproxy does not support wildcard subdomains, so subdomain=false is used.
+# Coder proxies VS Code Web via its built-in path-based proxy; no wildcard DNS
+# is needed. The "Open in VS Code Web" button in the Coder UI will open:
+#   https://coder.tailaa3fee.ts.net/@<user>/<workspace>/apps/code/
+# ---------------------------------------------------------------------------
 
 resource "coder_app" "vscode_web" {
   agent_id     = coder_agent.main.id
@@ -95,7 +100,7 @@ resource "coder_app" "vscode_web" {
   display_name = "VS Code Web"
   icon         = "/icon/code.svg"
   url          = "http://localhost:13337/?folder=/workspaces/${data.coder_workspace.me.name}"
-  subdomain    = true   # requires CODER_WILDCARD_ACCESS_URL
+  subdomain    = false  # path-based proxy — no wildcard DNS required
   share        = "owner"
 
   healthcheck {
