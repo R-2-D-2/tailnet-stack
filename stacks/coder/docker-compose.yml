@@ -110,6 +110,11 @@ services:
       # --- Database ---
       CODER_PG_CONNECTION_URL: "postgresql://${POSTGRES_USER:-coder}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-coder}?sslmode=disable"
 
+      # --- Bind address ---
+      # Default is 127.0.0.1:3000 (loopback only). Must be 0.0.0.0 so the
+      # Docker bridge network, tsdproxy, and the health check can reach it.
+      CODER_HTTP_ADDRESS: "0.0.0.0:7080"
+
       # --- Access ---
       # tsdproxy exposes Coder at https://coder.tailaa3fee.ts.net
       # TLS is terminated by tsdproxy; Coder receives plain HTTP on :7080.
