@@ -262,10 +262,15 @@ resource "docker_container" "workspace" {
     "DOCKER_HOST=unix:///var/run/docker.sock",
   ]
 
+  # DNS configuration — use public resolvers.
+  # The /etc/hosts entry below takes precedence for coder.tailaa3fee.ts.net.
+  dns = ["1.1.1.1", "8.8.8.8"]
+  dns_search = [""]  # Prevent DNS search; rely on hosts file
+
   # Resolve the Coder access URL inside the workspace container.
-  # Docker bridge containers cannot reach Tailscale MagicDNS (100.100.100.100),
+  # Workspace containers (inside DinD) cannot reach Tailscale directly,
   # so we inject a static hosts entry pointing to the VPS Tailscale IP.
-  # This is required for the Coder agent to phone home correctly.
+  # The agent will use this to download and communicate with the Coder server.
   host {
     host = "coder.tailaa3fee.ts.net"
     ip   = var.tailscale_ip
