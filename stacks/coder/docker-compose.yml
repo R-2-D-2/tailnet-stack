@@ -1,0 +1,125 @@
+---
+# =============================================================================
+# Coder Stack — Docker Compose
+# =============================================================================
+# Components:
+#   - postgres   : Coder backend database
+#   - dind       : Docker-in-Docker daemon (workspace provisioner)
+#   - coder      : Coder server (UI, API, workspace orchestration)
+#
+# Workspaces are provisioned by Coder into the DinD daemon.
+# Each workspace container runs its own inner Docker daemon for devcontainer
+# support (privileged, nested DinD).
+#
+# Requires: .env (see .env.example)
+# =============================================================================
+
+name: coder
+
+networks:
+  coder:
+    name: coder
+    driver: bridge
+
+volumes:
+  postgres_data:
+  coder_data:
+  dind_data:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — Coder metadata & state store
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks:
+      - coder
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-coder}
+      POSTGRES_USER: ${POSTGRES_USER:-coder}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-coder} -d ${POSTGRES_DB:-coder}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Docker-in-Docker — Workspace container runtime
+  # ---------------------------------------------------------------------------
+  # Coder uses this daemon (via DOCKER_HOST) to provision workspace containers.
+  # Each workspace container will itself run a privileged inner Docker daemon
+  # to support devcontainers inside the workspace.
+  # ---------------------------------------------------------------------------
+  dind:
+    image: docker:27-dind
+    restart: unless-stopped
+    privileged: true                   # Required for DinD
+    networks:
+      - coder
+    environment:
+      DOCKER_TLS_CERTDIR: ""           # Disable TLS — internal network only
+    volumes:
+      - dind_data:/var/lib/docker
+    command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Coder — Workspace platform
+  # ---------------------------------------------------------------------------
+  coder:
+    image: ghcr.io/coder/coder:${CODER_VERSION:-latest}
+    restart: unless-stopped
+    networks:
+      - coder
+    ports:
+      - "${CODER_HTTP_PORT:-7080}:7080"
+    environment:
+      # --- Database ---
+      CODER_PG_CONNECTION_URL: "postgresql://${POSTGRES_USER:-coder}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-coder}?sslmode=disable"
+
+      # --- Access ---
+      # Set to the Tailscale MagicDNS hostname or Tailnet IP of this VPS
+      CODER_ACCESS_URL: "${CODER_ACCESS_URL}"
+      CODER_WILDCARD_ACCESS_URL: "${CODER_WILDCARD_ACCESS_URL:-}"
+
+      # --- Docker provisioner (points at the DinD sidecar) ---
+      DOCKER_HOST: "tcp://dind:2375"
+
+      # --- VS Code Web ---
+      # Coder serves VS Code Web natively; no extra config needed.
+      # Workspaces declare the vscode_web app in their template (see templates/).
+
+      # --- TLS (optional, recommended behind Tailscale) ---
+      # CODER_TLS_ENABLE: "true"
+      # CODER_TLS_CERT_FILE: "/tls/cert.pem"
+      # CODER_TLS_KEY_FILE: "/tls/key.pem"
+
+      # --- Logging ---
+      CODER_LOG_LEVEL: "${CODER_LOG_LEVEL:-info}"
+
+      # --- Telemetry ---
+      CODER_TELEMETRY_ENABLE: "${CODER_TELEMETRY_ENABLE:-false}"
+    volumes:
+      - coder_data:/home/coder/.config
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dind:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
