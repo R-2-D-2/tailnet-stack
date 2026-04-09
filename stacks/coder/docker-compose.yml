@@ -72,7 +72,8 @@ services:
     image: docker:27-dind
     restart: unless-stopped
     privileged: true                   # Required for DinD
-    network_mode: host                 # Critical: Use host network so workspace containers can reach Tailscale/Coder
+    networks:
+      - coder
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -103,7 +104,6 @@ services:
       - 8.8.8.8
     extra_hosts:
       - "coder.tailaa3fee.ts.net:${TAILSCALE_IP}"  # Resolves own access URL at startup
-      - "dind-host:host-gateway"                    # Reach DinD on host network via bridge gateway (dynamic)
     ports:
       - "${CODER_HTTP_PORT:-7080}:7080"
     environment:
@@ -123,8 +123,8 @@ services:
       #   tsdproxy does not support wildcard subdomains. VS Code Web uses
       #   Coder's built-in path-based proxy (subdomain=false in the template).
 
-      # --- Docker provisioner (DinD on host network; port 12375 avoids conflict with host dockerd on 2375) ---
-      DOCKER_HOST: "tcp://dind-host:12375"
+      # --- Docker provisioner (DinD on coder bridge; port 12375 avoids conflict with host dockerd on 2375) ---
+      DOCKER_HOST: "tcp://dind:12375"
 
       # --- Logging ---
       CODER_LOG_LEVEL: "${CODER_LOG_LEVEL:-info}"
