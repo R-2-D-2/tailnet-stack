@@ -84,7 +84,18 @@ services:
     volumes:
       - dind_data:/var/lib/docker
       - dind_socket:/run/dind          # Expose socket to Coder via shared volume (no TCP needed)
-    command: ["dockerd", "--host=unix:///run/dind/docker.sock", "--tls=false", "--ipv6=false"]
+    # Start dockerd then widen socket permissions so the non-root Coder
+    # container user can connect. dockerd creates the socket 0660 (root:docker)
+    # by default; chmod 0666 makes it accessible without changing ownership.
+    command:
+      - sh
+      - -c
+      - |
+        dockerd --host=unix:///run/dind/docker.sock --tls=false --ipv6=false &
+        DPID=$!
+        until [ -S /run/dind/docker.sock ]; do sleep 0.1; done
+        chmod 0666 /run/dind/docker.sock
+        wait "$DPID"
     healthcheck:
       test: ["CMD", "docker", "-H", "unix:///run/dind/docker.sock", "info"]
       interval: 10s
