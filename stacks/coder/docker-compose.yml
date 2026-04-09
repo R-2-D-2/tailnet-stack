@@ -84,18 +84,7 @@ services:
     volumes:
       - dind_data:/var/lib/docker
       - dind_socket:/run/dind          # Expose socket to Coder via shared volume (no TCP needed)
-    # Start dockerd then widen socket permissions so the non-root Coder
-    # container user can connect. dockerd creates the socket 0660 (root:docker)
-    # by default; chmod 0666 makes it accessible without changing ownership.
-    command:
-      - sh
-      - -c
-      - |
-        dockerd --host=unix:///run/dind/docker.sock --tls=false --ipv6=false &
-        DPID=$$!
-        until [ -S /run/dind/docker.sock ]; do sleep 0.1; done
-        chmod 0666 /run/dind/docker.sock
-        wait "$$DPID"
+    command: ["dockerd", "--host=unix:///run/dind/docker.sock", "--tls=false", "--ipv6=false"]
     healthcheck:
       test: ["CMD", "docker", "-H", "unix:///run/dind/docker.sock", "info"]
       interval: 10s
@@ -149,6 +138,11 @@ services:
       # Terraform provisioner. This passes the Tailscale IP into the workspace
       # template (var.tailscale_ip) so the agent can resolve the access URL.
       TF_VAR_tailscale_ip: "${TAILSCALE_IP}"
+    # The DinD socket is created root:root 0660. Adding GID 0 (root group) as a
+    # supplemental group gives the non-root coder user group-level rw access
+    # without running the entire container as root.
+    group_add:
+      - "0"
     volumes:
       - coder_data:/home/coder/.config
       - dind_socket:/run/dind          # Access DinD socket shared from the dind container
