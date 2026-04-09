@@ -22,6 +22,15 @@ terraform {
 # =============================================================================
 
 # ---------------------------------------------------------------------------
+# Variables
+# ---------------------------------------------------------------------------
+
+variable "tailscale_ip" {
+  description = "Tailscale IPv4 address of the VPS (tailscale ip -4). Injected as a static /etc/hosts entry in workspace containers so the Coder agent can resolve the access URL without MagicDNS."
+  type        = string
+}
+
+# ---------------------------------------------------------------------------
 # Providers
 # ---------------------------------------------------------------------------
 
@@ -252,6 +261,15 @@ resource "docker_container" "workspace" {
     "CODER_AGENT_TOKEN=${coder_agent.main.token}",
     "DOCKER_HOST=unix:///var/run/docker.sock",
   ]
+
+  # Resolve the Coder access URL inside the workspace container.
+  # Docker bridge containers cannot reach Tailscale MagicDNS (100.100.100.100),
+  # so we inject a static hosts entry pointing to the VPS Tailscale IP.
+  # This is required for the Coder agent to phone home correctly.
+  host {
+    host = "coder.tailaa3fee.ts.net"
+    ip   = var.tailscale_ip
+  }
 
   # Coder agent entrypoint
   command = ["sh", "-c", coder_agent.main.init_script]

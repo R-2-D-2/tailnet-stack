@@ -16,9 +16,12 @@
 #   and registers it as https://coder.tailaa3fee.ts.net in the Tailnet.
 #   tsdproxy handles TLS via Tailscale auto-cert — Coder itself runs plain HTTP.
 #
-# Note: tsdproxy does not support wildcard subdomains, so
-#   CODER_WILDCARD_ACCESS_URL is intentionally not set. VS Code Web is served
-#   via Coder's path-based proxy instead of subdomain-based proxy.
+# DNS / Tailscale MagicDNS:
+#   Docker bridge containers cannot reach the host Tailscale MagicDNS resolver
+#   (100.100.100.100). extra_hosts injects a static /etc/hosts entry for the
+#   Coder access URL, pointing it at the VPS Tailscale IP (TAILSCALE_IP in .env).
+#   This fixes the startup warning and lets workspace agents phone home correctly.
+#   Find your Tailscale IP with: tailscale ip -4
 #
 # Requires: .env (see .env.example)
 # =============================================================================
@@ -74,6 +77,8 @@ services:
     dns:
       - 1.1.1.1
       - 8.8.8.8
+    extra_hosts:
+      - "coder.tailaa3fee.ts.net:${TAILSCALE_IP}"  # Workspace agents need to resolve this
     environment:
       DOCKER_TLS_CERTDIR: ""           # Disable TLS — internal network only
     volumes:
@@ -97,6 +102,8 @@ services:
     dns:
       - 1.1.1.1
       - 8.8.8.8
+    extra_hosts:
+      - "coder.tailaa3fee.ts.net:${TAILSCALE_IP}"  # Resolves own access URL at startup
     ports:
       - "${CODER_HTTP_PORT:-7080}:7080"
     environment:
