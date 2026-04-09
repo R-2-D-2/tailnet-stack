@@ -71,11 +71,14 @@ services:
     privileged: true                   # Required for DinD
     networks:
       - coder
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       DOCKER_TLS_CERTDIR: ""           # Disable TLS — internal network only
     volumes:
       - dind_data:/var/lib/docker
-    command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
+    command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock", "--ipv6=false"]
     healthcheck:
       test: ["CMD", "docker", "info"]
       interval: 10s
@@ -91,6 +94,9 @@ services:
     restart: unless-stopped
     networks:
       - coder
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     ports:
       - "${CODER_HTTP_PORT:-7080}:7080"
     environment:
