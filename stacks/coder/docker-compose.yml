@@ -103,7 +103,7 @@ services:
       - 8.8.8.8
     extra_hosts:
       - "coder.tailaa3fee.ts.net:${TAILSCALE_IP}"  # Resolves own access URL at startup
-      - "dind-host:172.18.0.1"                     # Reach DinD on host network via bridge gateway
+      - "dind-host:host-gateway"                    # Reach DinD on host network via bridge gateway (dynamic)
     ports:
       - "${CODER_HTTP_PORT:-7080}:7080"
     environment:
