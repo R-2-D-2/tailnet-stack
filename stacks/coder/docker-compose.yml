@@ -131,6 +131,12 @@ services:
 
       # --- Telemetry ---
       CODER_TELEMETRY_ENABLE: "${CODER_TELEMETRY_ENABLE:-false}"
+
+      # --- Terraform provisioner variables ---
+      # TF_VAR_* variables are picked up automatically by Coder's embedded
+      # Terraform provisioner. This passes the Tailscale IP into the workspace
+      # template (var.tailscale_ip) so the agent can resolve the access URL.
+      TF_VAR_tailscale_ip: "${TAILSCALE_IP}"
     volumes:
       - coder_data:/home/coder/.config
     labels:
