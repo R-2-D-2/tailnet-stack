@@ -82,7 +82,7 @@ services:
       DOCKER_TLS_CERTDIR: ""           # Disable TLS — internal network only
     volumes:
       - dind_data:/var/lib/docker
-    command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock", "--ipv6=false"]
+    command: ["dockerd", "--host=tcp://0.0.0.0:12375", "--host=unix:///var/run/docker.sock", "--tls=false", "--ipv6=false"]
     healthcheck:
       test: ["CMD", "docker", "info"]
       interval: 10s
@@ -123,8 +123,8 @@ services:
       #   tsdproxy does not support wildcard subdomains. VS Code Web uses
       #   Coder's built-in path-based proxy (subdomain=false in the template).
 
-      # --- Docker provisioner (DinD now on host network; reach via bridge gateway) ---
-      DOCKER_HOST: "tcp://dind-host:2375"
+      # --- Docker provisioner (DinD on host network; port 12375 avoids conflict with host dockerd on 2375) ---
+      DOCKER_HOST: "tcp://dind-host:12375"
 
       # --- Logging ---
       CODER_LOG_LEVEL: "${CODER_LOG_LEVEL:-info}"
