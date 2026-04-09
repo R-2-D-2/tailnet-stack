@@ -23,6 +23,14 @@
 #   This fixes the startup warning and lets workspace agents phone home correctly.
 #   Find your Tailscale IP with: tailscale ip -4
 #
+# DinD connectivity:
+#   DinD runs with network_mode: host so workspace containers can reach Tailscale.
+#   Coder connects to DinD via TCP on port 12375, resolving "dind-host" to the VPS
+#   Tailscale IP (100.x.x.x). The Tailscale interface is not a Docker bridge, so
+#   Docker's iptables isolation rules do not block this traffic. Using host-gateway
+#   (172.17.0.1 / docker0) was previously attempted but timed out due to Docker's
+#   inter-bridge isolation. The Tailscale IP bypasses that entirely.
+#
 # Requires: .env (see .env.example)
 # =============================================================================
 
@@ -37,7 +45,6 @@ volumes:
   postgres_data:
   coder_data:
   dind_data:
-  dind_socket:    # Shared volume exposing the DinD daemon socket to Coder
 
 services:
 
@@ -68,12 +75,17 @@ services:
   # Coder uses this daemon (via DOCKER_HOST) to provision workspace containers.
   # Each workspace container will itself run a privileged inner Docker daemon
   # to support devcontainers inside the workspace.
+  #
+  # network_mode: host is required so that workspace containers spawned by this
+  # daemon can reach the host Tailscale interface to phone home to Coder.
+  #
+  # Port 12375 is used to avoid conflicting with the host dockerd on 2375.
   # ---------------------------------------------------------------------------
   dind:
     image: docker:27-dind
     restart: unless-stopped
     privileged: true                   # Required for DinD
-    network_mode: host                 # Host network: workspace containers can reach Tailscale/Coder
+    network_mode: host                 # Required: workspace containers must reach Tailscale
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -83,13 +95,9 @@ services:
       DOCKER_TLS_CERTDIR: ""           # Disable TLS — internal network only
     volumes:
       - dind_data:/var/lib/docker
-      - dind_socket:/run/dind          # Expose socket to Coder via shared volume (no TCP needed)
-    # --group=root sets the socket group to GID 0 (root), matching the
-    # group_add: ["0"] on the coder service so it can connect without root.
-    # Default group is "docker" (non-zero GID in Alpine), which would not match.
-    command: ["dockerd", "--host=unix:///run/dind/docker.sock", "--group=root", "--tls=false", "--ipv6=false"]
+    command: ["dockerd", "--host=tcp://0.0.0.0:12375", "--host=unix:///var/run/docker.sock", "--tls=false", "--ipv6=false"]
     healthcheck:
-      test: ["CMD", "docker", "-H", "unix:///run/dind/docker.sock", "info"]
+      test: ["CMD", "docker", "info"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -108,6 +116,10 @@ services:
       - 8.8.8.8
     extra_hosts:
       - "coder.tailaa3fee.ts.net:${TAILSCALE_IP}"  # Resolves own access URL at startup
+      # dind-host resolves to the VPS Tailscale IP (100.x.x.x). Unlike docker0
+      # (172.17.0.1), the Tailscale interface is not a Docker bridge, so Docker's
+      # iptables inter-bridge isolation does not block traffic to it.
+      - "dind-host:${TAILSCALE_IP}"
     ports:
       - "${CODER_HTTP_PORT:-7080}:7080"
     environment:
@@ -127,8 +139,10 @@ services:
       #   tsdproxy does not support wildcard subdomains. VS Code Web uses
       #   Coder's built-in path-based proxy (subdomain=false in the template).
 
-      # --- Docker provisioner — access DinD via shared Unix socket (avoids all TCP bridge/iptables issues) ---
-      DOCKER_HOST: "unix:///run/dind/docker.sock"
+      # --- Docker provisioner ---
+      # Connects to DinD via the Tailscale IP. Port 12375 avoids conflict with
+      # the host dockerd on 2375. See networking note at the top of this file.
+      DOCKER_HOST: "tcp://dind-host:12375"
 
       # --- Logging ---
       CODER_LOG_LEVEL: "${CODER_LOG_LEVEL:-info}"
@@ -141,14 +155,8 @@ services:
       # Terraform provisioner. This passes the Tailscale IP into the workspace
       # template (var.tailscale_ip) so the agent can resolve the access URL.
       TF_VAR_tailscale_ip: "${TAILSCALE_IP}"
-    # The DinD socket is created root:root 0660. Adding GID 0 (root group) as a
-    # supplemental group gives the non-root coder user group-level rw access
-    # without running the entire container as root.
-    group_add:
-      - "0"
     volumes:
       - coder_data:/home/coder/.config
-      - dind_socket:/run/dind          # Access DinD socket shared from the dind container
     labels:
       # -------------------------------------------------------------------------
       # tsdproxy — registers this container in the Tailnet as:
